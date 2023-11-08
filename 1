@@ -1,0 +1,102 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <math.h>
+#include <sys/time.h>
+#include <omp.h>
+
+int main(int argc, char* argv[]) {
+    int i, N;
+    long delta_ms;
+    struct timeval T1, T2;
+    N = atoi(argv[1]); // N равен первому параметру командной строки
+    gettimeofday(&T1, NULL); // запомнить текущее время T1
+    
+    #pragma omp parallel for num_threads(4)
+    for (i = 0; i < 100; i++) {  // 100 экспериментов
+        unsigned int seed = time(NULL) + i; // инициализация начального значения ГСЧ
+        double M1[N];
+        double M2[N/2];
+        double copyM2[N/2];
+        double min = 0;
+
+        // заполнение массивов ГСЧ
+        #pragma omp parallel for
+        for(int j = 0; j < N; j++) {
+            M1[j] = 1 + rand_r(&seed) % (1053-1);
+        }
+
+        #pragma omp parallel for
+        for(int j = 0; j < N/2; j++) {
+            M2[j] = 1053 + rand_r(&seed) % (10530-1053);
+        }
+
+        // REDUCE вариант 6 и 4
+        #pragma omp parallel for
+        for(int j = 0; j < N; j++) {
+            M1[j] = M1[j] / 2.7182818;
+            M1[j] = pow(M1[j], 1/3);
+        }
+
+        #pragma omp parallel for
+        for(int j = 0; j < N/2; j++) {
+            copyM2[j] = M2[j];
+        }
+
+        #pragma omp parallel for
+        for(int j = 1; j < N/2; j++) {
+            M2[j] = fabs(1.0 / tan(M2[j] + copyM2[j-1]));
+        }
+
+        // Merge вариант 2
+        #pragma omp parallel for
+        for(int j = 0; j < N/2; j++) {
+            M2[j] = M1[j] / M2[j];
+        }
+
+        // Сортировка расческой
+        int n = 0; // количество перестановок
+        double fakt = 1.2473309; // фактор уменьшения
+        int step = N/2 - 1;
+
+        while (step >= 1) {
+            #pragma omp parallel for reduction(+:n)
+            for (int j = 0; j + step < N/2; ++j) {
+                if (M2[j] > M2[j + step]) {
+                    int temp = M2[j];
+                    M2[j] = M2[j + step];
+                    M2[j + step] = temp;
+                    n++;
+                }
+            }
+            if (step == 1) break;
+            step = (int)(step/fakt);
+        }
+
+        for(int j = 0; j < N/2; j++) {
+            if  (M2[j] != 0) {
+                min = M2[j];
+                break;
+            }
+        }
+
+        if (min != 0) {
+            double summ = 0;
+            #pragma omp parallel for reduction(+:summ)
+            for(int j = 0; j < N/2; j++) {
+                int a = (int)M2[j] / min;
+                if  (a % 2  == 0) {
+                    summ += sin(M2[j]);
+                }
+            }
+            printf("%lf\n", summ);
+        } else {
+            printf("error");
+        }
+    }
+
+    gettimeofday(&T2, NULL); // запомнить текущее время T2
+    delta_ms = (T2.tv_sec - T1.tv_sec) * 1000 + (T2.tv_usec - T1.tv_usec) / 1000;
+    printf("\nN=%d. Milliseconds passed: %ld\n", N, delta_ms);
+    return 0;
+}
